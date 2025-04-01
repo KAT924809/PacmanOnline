@@ -1,11 +1,12 @@
 import java.awt.*;
 import java.awt.event.*;
 import java.io.IOException;
+import java.util.HashSet;
 import javax.swing.*;
 
 public class PacMan extends JPanel implements ActionListener, KeyListener {
 
-    // Inner Block class
+    // Inner Block class for Pac-Man and obstacles
     public class Block {
         public Image image;
         public int x, y;
@@ -40,6 +41,7 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
             }
         }
     }
+
     private final int rowCount = 16;
     private final int columnCount = 19;
     private final int tileSize = 32;
@@ -50,6 +52,7 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
     private Image pacman2Right, pacman2Left, pacman2Up, pacman2Down;
     private Block pacman;
     private Block player2;
+    private HashSet<Block> walls = new HashSet<>();
     private NetworkHandler network;
     private Timer timer;
 
@@ -77,28 +80,11 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
         addKeyListener(this);
         setFocusable(true);
 
-        // Load player images
-        pacmanRight = new ImageIcon(getClass().getResource("./pacmanRight.png")).getImage();
-        pacmanLeft = new ImageIcon(getClass().getResource("./pacmanLeft.png")).getImage();
-        pacmanUp = new ImageIcon(getClass().getResource("./pacmanUp.png")).getImage();
-        pacmanDown = new ImageIcon(getClass().getResource("./pacmanDown.png")).getImage();
+        // Load images
+        loadImages();
 
-        pacman2Right = new ImageIcon(getClass().getResource("./pacmanRight.png")).getImage();
-        pacman2Left = new ImageIcon(getClass().getResource("./pacmanLeft.png")).getImage();
-        pacman2Up = new ImageIcon(getClass().getResource("./pacmanUp.png")).getImage();
-        pacman2Down = new ImageIcon(getClass().getResource("./pacmanDown.png")).getImage();
-
-        // Initialize player positions from map
-        for (int r = 0; r < map.length; r++) {
-            for (int c = 0; c < map[r].length(); c++) {
-                char ch = map[r].charAt(c);
-                if (ch == 'P') {
-                    pacman = new Block(pacmanRight, c * tileSize, r * tileSize, tileSize, tileSize);
-                } else if (ch == 'Q') {
-                    player2 = new Block(pacman2Right, c * tileSize, r * tileSize, tileSize, tileSize);
-                }
-            }
-        }
+        // Initialize game objects from map
+        initializeMap();
 
         // Start networking
         network = new NetworkHandler(isHost, hostAddress);
@@ -107,7 +93,41 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
         timer = new Timer(40, this);
         timer.start();
 
-        // Start listening for player2 movement
+        // Multiplayer handling
+        startListeningForPlayer2();
+    }
+
+    private void loadImages() {
+        pacmanRight = new ImageIcon(getClass().getResource("./pacmanRight.png")).getImage();
+        pacmanLeft = new ImageIcon(getClass().getResource("./pacmanLeft.png")).getImage();
+        pacmanUp = new ImageIcon(getClass().getResource("./pacmanUp.png")).getImage();
+        pacmanDown = new ImageIcon(getClass().getResource("./pacmanDown.png")).getImage();
+
+        pacman2Right = pacmanRight;
+        pacman2Left = pacmanLeft;
+        pacman2Up = pacmanUp;
+        pacman2Down = pacmanDown;
+    }
+
+    private void initializeMap() {
+        for (int r = 0; r < map.length; r++) {
+            for (int c = 0; c < map[r].length(); c++) {
+                char ch = map[r].charAt(c);
+                int x = c * tileSize;
+                int y = r * tileSize;
+
+                if (ch == 'X') {
+                    walls.add(new Block(null, x, y, tileSize, tileSize));
+                } else if (ch == 'P') {
+                    pacman = new Block(pacmanRight, x, y, tileSize, tileSize);
+                } else if (ch == 'Q') {
+                    player2 = new Block(pacman2Right, x, y, tileSize, tileSize);
+                }
+            }
+        }
+    }
+
+    private void startListeningForPlayer2() {
         new Thread(() -> {
             while (true) {
                 try {
@@ -135,26 +155,38 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
 
     @Override
     public void actionPerformed(ActionEvent e) {
-        pacman.x += pacman.velocityX;
-        pacman.y += pacman.velocityY;
-        player2.x += player2.velocityX;
-        player2.y += player2.velocityY;
+        movePlayer(pacman);
+        movePlayer(player2);
         repaint();
     }
 
-    @Override
+    private void movePlayer(Block player) {
+        int nextX = player.x + player.velocityX;
+        int nextY = player.y + player.velocityY;
 
+        if (!isWallCollision(nextX, nextY)) {
+            player.x = nextX;
+            player.y = nextY;
+        }
+    }
+
+    private boolean isWallCollision(int x, int y) {
+        for (Block wall : walls) {
+            if (wall.x == x && wall.y == y) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
     public void paintComponent(Graphics g) {
         super.paintComponent(g);
 
         // Draw the maze from the map array
         g.setColor(Color.BLUE);
-        for (int r = 0; r < map.length; r++) {
-            for (int c = 0; c < map[r].length(); c++) {
-                if (map[r].charAt(c) == 'X') {
-                    g.fillRect(c * tileSize, r * tileSize, tileSize, tileSize);
-                }
-            }
+        for (Block wall : walls) {
+            g.fillRect(wall.x, wall.y, tileSize, tileSize);
         }
 
         // Draw players on top
@@ -166,6 +198,7 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
     public void keyTyped(KeyEvent e) {}
     @Override
     public void keyPressed(KeyEvent e) {}
+
     @Override
     public void keyReleased(KeyEvent e) {
         char direction = ' ';
@@ -182,4 +215,3 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
         }
     }
 }
-
