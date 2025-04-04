@@ -6,7 +6,6 @@ import javax.swing.*;
 
 public class PacMan extends JPanel implements ActionListener, KeyListener {
 
-    // Inner Block class for Pac-Man and obstacles
     public class Block {
         public Image image;
         public int x, y;
@@ -23,22 +22,10 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
         }
 
         public void updateDirection(char direction) {
-            if (direction == 'U') {
-                velocityX = 0;
-                velocityY = -speed;
-            }
-            if (direction == 'D') {
-                velocityX = 0;
-                velocityY = speed;
-            }
-            if (direction == 'L') {
-                velocityX = -speed;
-                velocityY = 0;
-            }
-            if (direction == 'R') {
-                velocityX = speed;
-                velocityY = 0;
-            }
+            if (direction == 'U') { velocityX = 0; velocityY = -speed; }
+            if (direction == 'D') { velocityX = 0; velocityY = speed; }
+            if (direction == 'L') { velocityX = -speed; velocityY = 0; }
+            if (direction == 'R') { velocityX = speed; velocityY = 0; }
         }
     }
 
@@ -53,6 +40,9 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
     private Block pacman;
     private Block player2;
     private HashSet<Block> walls = new HashSet<>();
+    private final Object lock = new Object();
+    private final HashSet<String> occupiedTiles = new HashSet<>();
+
     private NetworkHandler network;
     private Timer timer;
 
@@ -80,20 +70,17 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
         addKeyListener(this);
         setFocusable(true);
 
-        // Load images
         loadImages();
-
-        // Initialize game objects from map
         initializeMap();
 
-        // Start networking
-        network = new NetworkHandler(isHost, hostAddress);
+        // Initialize shared tile state
+        occupiedTiles.add(pacman.x + "," + pacman.y);
+        occupiedTiles.add(player2.x + "," + player2.y);
 
-        // Start game loop timer
+        network = new NetworkHandler(isHost, hostAddress);
         timer = new Timer(40, this);
         timer.start();
 
-        // Multiplayer handling
         startListeningForPlayer2();
     }
 
@@ -163,10 +150,18 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
     private void movePlayer(Block player) {
         int nextX = player.x + player.velocityX;
         int nextY = player.y + player.velocityY;
+        String nextTile = nextX + "," + nextY;
+        String currentTile = player.x + "," + player.y;
 
-        if (!isWallCollision(nextX, nextY)) {
+        synchronized (lock) {
+            if (isWallCollision(nextX, nextY)) return;
+            if (occupiedTiles.contains(nextTile)) return;
+
+            // Update tile occupancy
+            occupiedTiles.remove(currentTile);
             player.x = nextX;
             player.y = nextY;
+            occupiedTiles.add(nextTile);
         }
     }
 
@@ -183,21 +178,17 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
     public void paintComponent(Graphics g) {
         super.paintComponent(g);
 
-        // Draw the maze from the map array
         g.setColor(Color.BLUE);
         for (Block wall : walls) {
             g.fillRect(wall.x, wall.y, tileSize, tileSize);
         }
 
-        // Draw players on top
         g.drawImage(pacman.image, pacman.x, pacman.y, pacman.width, pacman.height, null);
         g.drawImage(player2.image, player2.x, player2.y, player2.width, player2.height, null);
     }
 
-    @Override
-    public void keyTyped(KeyEvent e) {}
-    @Override
-    public void keyPressed(KeyEvent e) {}
+    @Override public void keyTyped(KeyEvent e) {}
+    @Override public void keyPressed(KeyEvent e) {}
 
     @Override
     public void keyReleased(KeyEvent e) {
@@ -215,3 +206,4 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
         }
     }
 }
+
