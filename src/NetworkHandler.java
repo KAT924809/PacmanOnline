@@ -6,41 +6,41 @@ public class NetworkHandler {
     private Socket socket;
     private BufferedReader in;
     private PrintWriter out;
-    private final int TIMEOUT = 1000; // 1-second timeout for deadlock version.
+    private final int TIMEOUT = 1000;
 
     public NetworkHandler(boolean isHost, String hostAddress) throws IOException {
         if (isHost) {
             serverSocket = new ServerSocket(9999);
-            System.out.println("Waiting for connection...");
-            connectHost();
+            System.out.println("[Host] Waiting for connection...");
+            connectAsHost();
         } else {
-            connectClient(hostAddress);
+            connectAsClient(hostAddress);
         }
     }
 
-    private void connectHost() throws IOException {
+    private void connectAsHost() throws IOException {
         while (true) {
             try {
                 socket = serverSocket.accept();
-                System.out.println("Connected!");
+                System.out.println("[Host] Client connected.");
                 setupStreams();
                 break;
             } catch (IOException e) {
-                System.out.println("Connection lost, waiting for reconnection...");
+                System.out.println("[Host] Connection failed, retrying...");
             }
         }
     }
 
-    private void connectClient(String hostAddress) {
+    private void connectAsClient(String host) {
         while (true) {
             try {
-                socket = new Socket(hostAddress, 9999);
-                System.out.println("Connected to host!");
+                socket = new Socket(host, 9999);
+                System.out.println("[Client] Connected to host.");
                 setupStreams();
                 break;
             } catch (IOException e) {
-                System.out.println("Host not available, retrying...");
-                try { Thread.sleep(2000); } catch (InterruptedException ignored) {} // Retry every 2 seconds
+                System.out.println("[Client] Could not connect, retrying...");
+                try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
             }
         }
     }
@@ -63,7 +63,7 @@ public class NetworkHandler {
         } catch (SocketTimeoutException e) {
             return null;
         } catch (IOException e) {
-            System.out.println("Connection lost, waiting for reconnection...");
+            System.out.println("[Network] Connection lost.");
             return null;
         }
     }
