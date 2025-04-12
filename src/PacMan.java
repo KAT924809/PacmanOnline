@@ -4,6 +4,8 @@ import java.io.*;
 import java.util.*;
 import javax.swing.*;
 import javax.swing.Timer;
+import java.util.concurrent.ConcurrentHashMap;
+
 
 public class PacMan extends JPanel implements ActionListener, KeyListener {
 
@@ -60,12 +62,12 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
     private final Set<String> occupiedTiles = new HashSet<>();
     private Timer timer;
     private NetworkHandler network;
-
+    private Thread networkThread;
     private boolean hasToken = false;
     private boolean requestedToken = false;
     private boolean isHost;
     private final Queue<String> requestQueue = new LinkedList<>();
-
+    Map<String, Point> remotePlayers = new ConcurrentHashMap<>();
     private boolean isMounted = false;
     private final String mountPath = "./nfs/mounted_data/";
 
@@ -91,9 +93,10 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
             "XX X X XXXXX X X XX",
             "X    X   X   X    X",
             "X XXXXXX X XXXXXX X",
-            "X                 X",
+            "X     Q           X",
             "XXXXXXXXXXXXXXXXXXX"
     };
+
 
 
     public PacMan(boolean isHost, String hostAddress) throws IOException {
@@ -108,7 +111,12 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
         loadImages();
         loadMap();
 
+        // Initialize network connection
         network = new NetworkHandler(isHost, hostAddress);
+
+        // Start syncing local game updates
+        startNetworkThread(); // ✅ <-- This is the new line added
+
         timer = new Timer(40, this);
         timer.start();
 
@@ -117,8 +125,9 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
         startGhostTaskThread();
     }
 
+
     private void loadImages() {
-        wallImg = new ImageIcon(getClass().getResource("./powerFood.png")).getImage();
+        wallImg = new ImageIcon(getClass().getResource("./wall.png")).getImage();
         foodImg = new ImageIcon(getClass().getResource("./powerFood.png")).getImage();
 
         pacR = new ImageIcon(getClass().getResource("./pacmanRight.png")).getImage();
@@ -131,6 +140,100 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
         ghostP = new ImageIcon(getClass().getResource("./pinkGhost.png")).getImage();
         ghostO = new ImageIcon(getClass().getResource("./orangeGhost.png")).getImage();
     }
+    private boolean isGameOver = false;
+    private void gameOver() {
+        isGameOver = true;
+        System.out.println("Game Over!");
+
+        // Optional: pause before restart
+        try {
+            Thread.sleep(2000); // 2 second pause
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        // Clear everything
+        walls.clear();
+        foods.clear();
+        ghosts.clear();
+        occupiedTiles.clear();
+
+        // Reset positions and flags
+        isGameOver = false;
+
+        // Reload map
+        loadMap();
+    }
+
+    private void addMovingGhost(Block ghost) {
+        ghosts.add(ghost);
+
+        new Thread(() -> {
+            Random rand = new Random();
+            int speed = 8; // MUCH faster
+            int direction = rand.nextInt(4); // 0=up, 1=right, 2=down, 3=left
+            int stuckCounter = 0;
+
+            while (!isGameOver) {
+                try {
+                    Thread.sleep(80); // Faster loop
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                int dx = 0, dy = 0;
+                switch (direction) {
+                    case 0 -> dy = -speed;
+                    case 1 -> dx = speed;
+                    case 2 -> dy = speed;
+                    case 3 -> dx = -speed;
+                }
+
+                int newX = ghost.x + dx;
+                int newY = ghost.y + dy;
+
+                boolean canMove = true;
+                for (Block wall : walls) {
+                    if (new Rectangle(newX, newY, ghost.width, ghost.height).intersects(wall.getBounds())) {
+                        canMove = false;
+                        break;
+                    }
+                }
+
+                if (canMove) {
+                    ghost.x = newX;
+                    ghost.y = newY;
+                    stuckCounter = 0;
+                } else {
+                    stuckCounter++;
+                }
+
+                // Change direction if stuck or randomly
+                if (stuckCounter > 3 || rand.nextInt(10) < 3) {
+                    direction = rand.nextInt(4);
+                    stuckCounter = 0;
+                }
+
+                // Check collision with Player 1 (Pacman)
+                if (ghost.getBounds().intersects(pacman.getBounds())) {
+                    System.out.println("Player 1 DIED!");
+                    gameOver();
+                    break;
+                }
+
+                // Check collision with Player 2
+                if (ghost.getBounds().intersects(player2.getBounds())) {
+                    System.out.println("Player 2 DIED!");
+                    gameOver();
+                    break;
+                }
+
+            }
+        }).start();
+    }
+
+
+
 
     private void loadMap() {
         for (int r = 0; r < rows; r++) {
@@ -141,21 +244,24 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
 
                 switch (ch) {
                     case 'X' -> walls.add(new Block(wallImg, x, y, tileSize, tileSize));
-                    case 'P' -> pacman = new Block(pacR, x, y, tileSize, tileSize);
-                    case 'Q' -> player2 = new Block(pacR, x, y, tileSize, tileSize);
-                    case 'b' -> ghosts.add(new Block(ghostB, x, y, tileSize, tileSize));
-                    case 'r' -> ghosts.add(new Block(ghostR, x, y, tileSize, tileSize));
-                    case 'p' -> ghosts.add(new Block(ghostP, x, y, tileSize, tileSize));
-                    case 'o' -> ghosts.add(new Block(ghostO, x, y, tileSize, tileSize));
+                    case 'P' -> {
+                        pacman = new Block(pacR, x, y, tileSize, tileSize);
+                        occupiedTiles.add(x + "," + y);
+                    }
+                    case 'Q' -> {
+                        player2 = new Block(pacR, x, y, tileSize, tileSize);
+                        occupiedTiles.add(x + "," + y);
+                    }
+                    case 'b' -> addMovingGhost(new Block(ghostB, x, y, tileSize, tileSize));
+                    case 'r' -> addMovingGhost(new Block(ghostR, x, y, tileSize, tileSize));
+                    case 'p' -> addMovingGhost(new Block(ghostP, x, y, tileSize, tileSize));
+                    case 'o' -> addMovingGhost(new Block(ghostO, x, y, tileSize, tileSize));
                     case ' ' -> foods.add(new Block(null, x + 14, y + 14, 4, 4));
                 }
             }
         }
-
-        // Track occupied tiles
-        occupiedTiles.add(pacman.x + "," + pacman.y);
-        occupiedTiles.add(player2.x + "," + player2.y);
     }
+
     private void startListeningThread() {
         new Thread(() -> {
             while (true) {
@@ -177,7 +283,7 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
                         hasToken = true;
                         requestedToken = false;
                     }
-                } catch (IOException e) {
+                } catch (Exception e) {
                     break;
                 }
             }
@@ -273,6 +379,10 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
             g.setColor(Color.WHITE);
             g.fillRect(food.x, food.y, food.width, food.height);
         }
+        for (String key : remotePlayers.keySet()) {
+            Point p = remotePlayers.get(key);
+            g.drawImage(pacman.image, p.x, p.y, this);
+        }
         for (Block ghost : ghosts) g.drawImage(ghost.image, ghost.x, ghost.y, ghost.width, ghost.height, null);
         g.drawImage(pacman.image, pacman.x, pacman.y, pacman.width, pacman.height, null);
         g.drawImage(player2.image, player2.x, player2.y, player2.width, player2.height, null);
@@ -311,12 +421,47 @@ public class PacMan extends JPanel implements ActionListener, KeyListener {
             case KeyEvent.VK_A -> { player2.image = pacL; player2.updateDirection('L'); }
             case KeyEvent.VK_D -> { player2.image = pacR; player2.updateDirection('R'); }
         }
+        if (isHost) {
+            network.sendMessage("P1:" + pacman.x + "," + pacman.y);
+        } else {
+            network.sendMessage("P2:" + player2.x + "," + player2.y);
+        }
+
+
 
         // NFS Mount/Unmount
         if (code == KeyEvent.VK_M) {
             if (!isMounted) mountNFS(); else unmountNFS();
         }
     }
+    private void handleNetworkMessage(String msg) {
+        if (msg.startsWith("P1:") && !isHost) {
+            String[] coords = msg.substring(3).split(",");
+            pacman.x = Integer.parseInt(coords[0]);
+            pacman.y = Integer.parseInt(coords[1]);
+        } else if (msg.startsWith("P2:") && isHost) {
+            String[] coords = msg.substring(3).split(",");
+            player2.x = Integer.parseInt(coords[0]);
+            player2.y = Integer.parseInt(coords[1]);
+        }
+    }
+
+    private void startNetworkThread() {
+        networkThread = new Thread(() -> {
+            while (true) {
+                try {
+                    String msg = network.receiveMessage();
+                    if (msg != null) {
+                        handleNetworkMessage(msg);
+                    }
+                } catch (Exception e) {
+                    System.out.println("[Network] Error in network thread.");
+                }
+            }
+        });
+        networkThread.start();
+    }
+
 
 
     private void mountNFS() {
