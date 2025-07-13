@@ -16,7 +16,7 @@ A classic Pac-Man game re-engineered using **Distributed Systems concepts** incl
 
 ## 📸 Demo
 
-*Insert animated GIF or screenshots here of gameplay and logs showing distributed features in action.*
+
 
 ---
 
@@ -97,9 +97,8 @@ Java AWT for UI
 
 Inspiration from classical Pac-Man
 
-Distributed Systems coursework at [Your University Name]
 
-🏁 Future Work
+🏁 Future Work----Need Time
 Add GUI indicators for token status
 
 Show clock values on screen
